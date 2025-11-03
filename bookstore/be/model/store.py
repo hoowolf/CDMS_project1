@@ -1,54 +1,71 @@
 import logging
 import os
-import sqlite3 as sqlite
 import threading
+from pymongo import MongoClient
 
 
 class Store:
-    database: str
-
     def __init__(self, db_path):
-        self.database = os.path.join(db_path, "be.db")
-        self.init_tables()
+        # 连接到本地MongoDB的bookstore数据库
+        self.client = MongoClient('localhost', 27017)
+        self.db = self.client['bookstore']
+        self.init_collections()
 
-    def init_tables(self):
+    def init_collections(self):
+        # 确保必要的集合存在
+        collections = ['user', 'store', 'order', 'book']
+        for collection in collections:
+            if collection not in self.db.list_collection_names():
+                self.db.create_collection(collection)
+        
+        # 为user集合创建索引
+        self.db.user.create_index("user_id", unique=True)
+        self.db.store.create_index("store_id", unique=True)
+        # 为book集合创建索引
+        # book_id不应该全局唯一，应该是book_id和belong_store_id的组合唯一
+        # 这样同一本书可以在不同商店中存在不同的记录
+        
+        # 先尝试删除旧的book_id唯一索引（如果存在）
         try:
-            conn = self.get_db_conn()
-            conn.execute(
-                "CREATE TABLE IF NOT EXISTS user ("
-                "user_id TEXT PRIMARY KEY, password TEXT NOT NULL, "
-                "balance INTEGER NOT NULL, token TEXT, terminal TEXT);"
-            )
+            existing_indexes = self.db.book.list_indexes()
+            for index in existing_indexes:
+                if index.get("name") == "book_id_1" and index.get("unique"):
+                    self.db.book.drop_index("book_id_1")
+                    break
+        except Exception:
+            pass  # 忽略删除索引时的错误
+        
+        # 创建复合唯一索引：book_id和belong_store_id的组合必须唯一
+        try:
+            self.db.book.create_index([("book_id", 1), ("belong_store_id", 1)], unique=True, name="book_id_store_id_unique")
+        except Exception:
+            pass  # 索引可能已存在，忽略错误
+        
+        # 创建非唯一索引以优化查询性能
+        self.db.book.create_index("book_id", unique=False)
+        self.db.book.create_index("belong_store_id", unique=False)
+        
+        # 为order集合创建索引
+        # 删除旧的order_id唯一索引（如果存在），因为一个订单可以有多条记录（每本书一条）
+        try:
+            existing_indexes = self.db.order.list_indexes()
+            for index in existing_indexes:
+                if index.get("name") == "order_id_1" and index.get("unique"):
+                    self.db.order.drop_index("order_id_1")
+                    break
+        except Exception:
+            pass  # 忽略删除索引时的错误
+        
+        # 创建order_id的非唯一索引以优化查询性能
+        self.db.order.create_index("order_id", unique=False)
+        # 创建复合索引：同一订单中同一本书只能有一条记录
+        try:
+            self.db.order.create_index([("order_id", 1), ("book_id", 1)], unique=True, name="order_id_book_id_unique")
+        except Exception:
+            pass  # 索引可能已存在，忽略错误
 
-            conn.execute(
-                "CREATE TABLE IF NOT EXISTS user_store("
-                "user_id TEXT, store_id, PRIMARY KEY(user_id, store_id));"
-            )
-
-            conn.execute(
-                "CREATE TABLE IF NOT EXISTS store( "
-                "store_id TEXT, book_id TEXT, book_info TEXT, stock_level INTEGER,"
-                " PRIMARY KEY(store_id, book_id))"
-            )
-
-            conn.execute(
-                "CREATE TABLE IF NOT EXISTS new_order( "
-                "order_id TEXT PRIMARY KEY, user_id TEXT, store_id TEXT)"
-            )
-
-            conn.execute(
-                "CREATE TABLE IF NOT EXISTS new_order_detail( "
-                "order_id TEXT, book_id TEXT, count INTEGER, price INTEGER,  "
-                "PRIMARY KEY(order_id, book_id))"
-            )
-
-            conn.commit()
-        except sqlite.Error as e:
-            logging.error(e)
-            conn.rollback()
-
-    def get_db_conn(self) -> sqlite.Connection:
-        return sqlite.connect(self.database)
+    def get_db(self):
+        return self.db
 
 
 database_instance: Store = None
@@ -61,6 +78,6 @@ def init_database(db_path):
     database_instance = Store(db_path)
 
 
-def get_db_conn():
+def get_db():
     global database_instance
-    return database_instance.get_db_conn()
+    return database_instance.get_db()

@@ -1,4 +1,3 @@
-import sqlite3 as sqlite
 from be.model import error
 from be.model import db_conn
 
@@ -20,19 +19,45 @@ class Seller(db_conn.DBConn):
                 return error.error_non_exist_user_id(user_id)
             if not self.store_id_exist(store_id):
                 return error.error_non_exist_store_id(store_id)
-            if self.book_id_exist(store_id, book_id):
+            
+            # 检查该商店中是否已存在该书籍ID（使用复合唯一索引保证）
+            existing_book = self.conn.book.find_one({"book_id": book_id, "belong_store_id": store_id})
+            if existing_book is not None:
+                # 如果该商店中已存在该书籍ID，返回错误
                 return error.error_exist_book_id(book_id)
-
-            self.conn.execute(
-                "INSERT into store(store_id, book_id, book_info, stock_level)"
-                "VALUES (?, ?, ?, ?)",
-                (store_id, book_id, book_json_str, stock_level),
-            )
-            self.conn.commit()
-        except sqlite.Error as e:
+            
+            # 解析书籍信息
+            import json
+            book_info = json.loads(book_json_str)
+            
+            # 为当前商店插入新的书籍记录
+            # 使用 book_id + store_id 作为 _id 确保唯一性
+            book_detail_doc = {
+                "_id": "{}_{}".format(book_id, store_id),
+                "author": book_info.get("author", ""),
+                "author_intro": book_info.get("author_intro", ""),
+                "binding": book_info.get("binding", ""),
+                "book_id": book_id,
+                "belong_store_id": store_id,
+                "stock_level": stock_level,
+                "book_intro": book_info.get("book_intro", ""),
+                "content": book_info.get("content", ""),
+                "currency_unit": book_info.get("currency_unit", ""),
+                "isbn": book_info.get("isbn", ""),
+                "original_title": book_info.get("original_title", ""),
+                "pages": book_info.get("pages", 0),
+                "picture": book_info.get("pictures", []),
+                "price": book_info.get("price", 0),
+                "pub_year": book_info.get("pub_year", ""),
+                "publisher": book_info.get("publisher", ""),
+                "tags": book_info.get("tags", []),
+                "title": book_info.get("title", ""),
+                "translator": book_info.get("translator", "")
+            }
+            self.conn.book.insert_one(book_detail_doc)
+            
+        except Exception as e:
             return 528, "{}".format(str(e))
-        except BaseException as e:
-            return 530, "{}".format(str(e))
         return 200, "ok"
 
     def add_stock_level(
@@ -43,34 +68,42 @@ class Seller(db_conn.DBConn):
                 return error.error_non_exist_user_id(user_id)
             if not self.store_id_exist(store_id):
                 return error.error_non_exist_store_id(store_id)
-            if not self.book_id_exist(store_id, book_id):
-                return error.error_non_exist_book_id(book_id)
-
-            self.conn.execute(
-                "UPDATE store SET stock_level = stock_level + ? "
-                "WHERE store_id = ? AND book_id = ?",
-                (add_stock_level, store_id, book_id),
+            
+            # 查找书籍并更新库存
+            result = self.conn.book.update_one(
+                {
+                    "book_id": book_id,
+                    "belong_store_id": store_id
+                },
+                {
+                    "$inc": {
+                        "stock_level": add_stock_level
+                    }
+                }
             )
-            self.conn.commit()
-        except sqlite.Error as e:
+            
+            # 检查是否找到了匹配的文档
+            if result.matched_count == 0:
+                return error.error_non_exist_book_id(book_id)
+                
+        except Exception as e:
             return 528, "{}".format(str(e))
-        except BaseException as e:
-            return 530, "{}".format(str(e))
         return 200, "ok"
 
     def create_store(self, user_id: str, store_id: str) -> (int, str):
         try:
             if not self.user_id_exist(user_id):
                 return error.error_non_exist_user_id(user_id)
+            # 检查商店是否已存在（通过检查store集合中是否有该store_id的记录）
             if self.store_id_exist(store_id):
                 return error.error_exist_store_id(store_id)
-            self.conn.execute(
-                "INSERT into user_store(store_id, user_id)" "VALUES (?, ?)",
-                (store_id, user_id),
-            )
-            self.conn.commit()
-        except sqlite.Error as e:
+            # 显式创建商店记录
+            store_doc = {
+                "store_id": store_id,
+                "owner_id": user_id,
+                "is_open": True
+            }
+            self.conn.store.insert_one(store_doc)
+        except Exception as e:
             return 528, "{}".format(str(e))
-        except BaseException as e:
-            return 530, "{}".format(str(e))
         return 200, "ok"

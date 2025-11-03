@@ -17,7 +17,7 @@ error_code = {
     525: "",
     526: "",
     527: "",
-    528: "",
+    528: "internal error: {}",
 }
 
 
@@ -54,7 +54,7 @@ def error_invalid_order_id(order_id):
 
 
 def error_not_sufficient_funds(order_id):
-    return 519, error_code[518].format(order_id)
+    return 519, error_code[519].format(order_id)
 
 
 def error_authorization_fail():

@@ -107,3 +107,40 @@ class Seller(db_conn.DBConn):
         except Exception as e:
             return 528, "{}".format(str(e))
         return 200, "ok"
+
+    def send(self, user_id: str, order_id: str) -> (int, str):
+        try:
+            # 检查用户是否存在
+            if not self.user_id_exist(user_id):
+                return error.error_non_exist_user_id(user_id)
+            
+            # 查询订单信息
+            orders = list(self.conn.order.find({"order_id": order_id}))
+            if not orders:
+                return error.error_invalid_order_id(order_id)
+            
+            # 获取订单对应的商店ID
+            store_id = orders[0]["store_id"]
+            
+            # 查询商店信息，确认该用户是商店的所有者
+            store_info = self.conn.store.find_one({"store_id": store_id})
+            if store_info is None:
+                return error.error_non_exist_store_id(store_id)
+            
+            seller_id = store_info["owner_id"]
+            if seller_id != user_id:
+                return error.error_authorization_fail()
+            
+            # 检查订单状态是否为已支付
+            if orders[0].get("status") != "paid":
+                return error.error_invalid_order_id(order_id)
+            
+            # 更新订单状态为已发货
+            self.conn.order.update_many(
+                {"order_id": order_id},
+                {"$set": {"status": "sent"}}
+            )
+            
+        except Exception as e:
+            return 528, "{}".format(str(e))
+        return 200, "ok"

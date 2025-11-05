@@ -3,14 +3,6 @@ import sqlite3
 import jwt
 import time
 
-def jwt_encode(user_id: str, terminal: str) -> str:
-    encoded = jwt.encode(
-        {"user_id": user_id, "terminal": terminal, "timestamp": time.time()},
-        key=user_id,
-        algorithm="HS256",
-    )
-    return encoded.decode("utf-8")
-
 def main():
     con = sqlite3.connect('book_lx.db')
     con.row_factory = dict_factory
@@ -31,7 +23,7 @@ def main():
     default_store_id = "1000001"
     store_doc = {
         "store_id": default_store_id,
-        "owner_id": "test10000",
+        "owner_id": "test_user_001",
         "is_open": True
     }
     store_collection.insert_one(store_doc)
@@ -83,6 +75,14 @@ def dict_factory(cursor, row):
    for idx, col in enumerate(cursor.description):
        d[col[0]] = row[idx]
    return d
+
+def jwt_encode(user_id: str, terminal: str) -> str:
+    encoded = jwt.encode(
+        {"user_id": user_id, "terminal": terminal, "timestamp": time.time()},
+        key=user_id,
+        algorithm="HS256",
+    )
+    return encoded.decode("utf-8")
 
 if __name__ == '__main__':
     main()

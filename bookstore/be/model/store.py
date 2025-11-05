@@ -20,49 +20,53 @@ class Store:
         
         # 为user集合创建索引
         self.db.user.create_index("user_id", unique=True)
+
+        # 为store集合创建索引
         self.db.store.create_index("store_id", unique=True)
+
         # 为book集合创建索引
         # book_id不应该全局唯一，应该是book_id和belong_store_id的组合唯一
         # 这样同一本书可以在不同商店中存在不同的记录
-        
-        # 先尝试删除旧的book_id唯一索引（如果存在）
-        try:
-            existing_indexes = self.db.book.list_indexes()
-            for index in existing_indexes:
-                if index.get("name") == "book_id_1" and index.get("unique"):
-                    self.db.book.drop_index("book_id_1")
-                    break
-        except Exception:
-            pass  # 忽略删除索引时的错误
-        
         # 创建复合唯一索引：book_id和belong_store_id的组合必须唯一
-        try:
-            self.db.book.create_index([("book_id", 1), ("belong_store_id", 1)], unique=True, name="book_id_store_id_unique")
-        except Exception:
-            pass  # 索引可能已存在，忽略错误
+        self.db.book.create_index([("book_id", 1), ("belong_store_id", 1)], unique=True, name="book_id_store_id_unique")
         
         # 创建非唯一索引以优化查询性能
         self.db.book.create_index("book_id", unique=False)
         self.db.book.create_index("belong_store_id", unique=False)
         
-        # 为order集合创建索引
-        # 删除旧的order_id唯一索引（如果存在），因为一个订单可以有多条记录（每本书一条）
+        # 创建文本索引以支持全文搜索功能
+        # 覆盖title、tags、content、book_intro、author、publisher，并设置权重
         try:
-            existing_indexes = self.db.order.list_indexes()
-            for index in existing_indexes:
-                if index.get("name") == "order_id_1" and index.get("unique"):
-                    self.db.order.drop_index("order_id_1")
-                    break
+            self.db.book.drop_index("book_text_index")
         except Exception:
-            pass  # 忽略删除索引时的错误
+            pass
+        self.db.book.create_index(
+            [
+                ("title", "text"),
+                ("tags", "text"),
+                ("content", "text"),
+                ("book_intro", "text"),
+                ("author", "text"),
+                ("publisher", "text"),
+            ],
+            name="book_text_index",
+            default_language="english",
+            weights={
+                "title": 10,
+                "tags": 6,
+                "book_intro": 5,
+                "content": 3,
+                "author": 2,
+                "publisher": 1,
+            },
+        )
         
+        # 为order集合创建索引    
         # 创建order_id的非唯一索引以优化查询性能
         self.db.order.create_index("order_id", unique=False)
         # 创建复合索引：同一订单中同一本书只能有一条记录
-        try:
-            self.db.order.create_index([("order_id", 1), ("book_id", 1)], unique=True, name="order_id_book_id_unique")
-        except Exception:
-            pass  # 索引可能已存在，忽略错误
+        self.db.order.create_index([("order_id", 1), ("book_id", 1)], unique=True, name="order_id_book_id_unique")
+        
 
     def get_db(self):
         return self.db

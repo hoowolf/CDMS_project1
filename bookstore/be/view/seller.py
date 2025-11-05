@@ -42,3 +42,27 @@ def add_stock_level():
     code, message = s.add_stock_level(user_id, store_id, book_id, add_num)
 
     return jsonify({"message": message}), code
+
+
+@bp_seller.route("/send", methods=["POST"])
+def send():
+    # 从请求头中获取token
+    token: str = request.headers.get("token")
+    
+    # 从请求体中获取order_id
+    order_id: str = request.json.get("order_id")
+    
+    # 验证参数是否完整
+    if not token or not order_id:
+        return jsonify({"message": "Missing token or order_id"}), 400
+    
+    # 从请求体获取user_id
+    user_id: str = request.json.get("user_id")
+    if not user_id:
+        return jsonify({"message": "Missing user_id"}), 400
+    
+    # 创建Seller实例并调用send方法
+    s = seller.Seller()
+    code, message = s.send(user_id, order_id)
+    
+    return jsonify({"message": message}), code
